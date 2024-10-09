@@ -60,9 +60,12 @@ class BatchPrefillWithPagedKVCachePyTorchWrapper {
       : kv_layout_(flashinfer::QKVLayout(layout)),
         handler_(std::make_shared<flashinfer::BatchPrefillHandler>(enable_cuda_graph)) {}
 
- private:
+  void SetName(const std::string& name) { name_ = name; }
+
+//  private:
   std::shared_ptr<flashinfer::BatchPrefillHandler> handler_;
   flashinfer::QKVLayout kv_layout_;
+  std::string name_;
 };
 
 class BatchPrefillWithRaggedKVCachePyTorchWrapper {

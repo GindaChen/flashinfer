@@ -849,7 +849,7 @@ class BatchPrefillHandler {
   }
   ~BatchPrefillHandler() { cudaFreeHost(page_locked_buffer_); }
 
- protected:
+//  protected:
   void* page_locked_buffer_;
   void* request_indices_;
   void* qo_tile_indices_;

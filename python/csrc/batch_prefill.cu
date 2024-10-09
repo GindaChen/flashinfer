@@ -20,11 +20,64 @@
 
 using namespace flashinfer;
 
+
+
+void write_tensor_to_file(const std::string& file_path, const torch::Tensor& tensor) {
+    FILE* file = fopen(file_path.c_str(), "w");
+    if (file == NULL) {
+        throw std::runtime_error("Unable to open file: " + file_path);
+    }
+
+    // Convert tensor to CPU if it's not already
+    torch::Tensor cpu_tensor = tensor.device().is_cpu() ? tensor : tensor.to(torch::kCPU);
+
+    cpu_tensor = cpu_tensor.to(torch::kFloat32);
+
+    // Write each element to the file
+    for (int64_t i = 0; i < cpu_tensor.numel(); ++i) {
+        fprintf(file, "%f\n", cpu_tensor.data_ptr<float>()[i]);
+    }
+    // echo
+    printf("@@ >> Wrote %ld elements to %s\n", cpu_tensor.numel(), file_path.c_str());
+
+    fclose(file);
+}
+
+
+void CheckWrapperHandlerProperties(std::shared_ptr<BatchPrefillHandler> wrapper, const std::string name) {
+    printf("@@ >> In c++: CheckWrapperHandlerProperties (dispachted from %s) \n", name.c_str());
+
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.page_locked_buffer_.txt", wrapper->page_locked_buffer_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.request_indices_.txt", wrapper->request_indices_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.qo_tile_indices_.txt", wrapper->qo_tile_indices_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.kv_tile_indices_.txt", wrapper->kv_tile_indices_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.merge_indptr_.txt", wrapper->merge_indptr_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.o_indptr_.txt", wrapper->o_indptr_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.kv_chunk_size_ptr_.txt", wrapper->kv_chunk_size_ptr_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.tmp_v_.txt", wrapper->tmp_v_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.tmp_s_.txt", wrapper->tmp_s_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.block_valid_mask_.txt", wrapper->block_valid_mask_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.total_num_rows_.txt", wrapper->total_num_rows_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.padded_batch_size_.txt", wrapper->padded_batch_size_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.warp_layout_.txt", wrapper->warp_layout_);
+    // write_tensor_to_file(name + ".CheckWrapperHandlerProperties.enable_cuda_graph_.txt", wrapper->enable_cuda_graph_);
+}
+
+
 void BatchPrefillWithPagedKVCachePyTorchWrapper::Plan(
     torch::Tensor float_workspace_buffer, torch::Tensor int_workspace_buffer,
     torch::Tensor qo_indptr, torch::Tensor paged_kv_indptr, unsigned int batch_size,
     unsigned int num_qo_heads, unsigned int num_kv_heads, unsigned int head_dim,
     unsigned int page_size, torch::Tensor empty_q_data) {
+
+  // Generate a random number
+  printf("@@ >> In c++: BatchPrefillWithPagedKVCachePyTorchWrapper::Plan\n");
+  printf("@@ >> batch_size: %u\n", batch_size);
+  printf("@@ >> num_qo_heads: %u\n", num_qo_heads);
+  printf("@@ >> num_kv_heads: %u\n", num_kv_heads);
+  printf("@@ >> head_dim: %u\n", head_dim);
+  printf("@@ >> page_size: %u\n", page_size);
+
   CHECK_INPUT(float_workspace_buffer);
   CHECK_INPUT(int_workspace_buffer);
   // NOTE(Zihao): not necessary to be a CUDA tensor
@@ -44,6 +97,12 @@ void BatchPrefillWithPagedKVCachePyTorchWrapper::Plan(
       float_workspace_buffer.size(0) * float_workspace_buffer.element_size();
   size_t int_workspace_size_in_bytes =
       int_workspace_buffer.size(0) * int_workspace_buffer.element_size();
+  
+  write_tensor_to_file("Plan.before.qo_indptr.txt", qo_indptr);
+  write_tensor_to_file("Plan.before.paged_kv_indptr.txt", paged_kv_indptr);
+  write_tensor_to_file("Plan.before.float_workspace_buffer.txt", float_workspace_buffer);
+  write_tensor_to_file("Plan.before.int_workspace_buffer.txt", int_workspace_buffer);
+
   cudaStream_t torch_current_stream = c10::cuda::getCurrentCUDAStream(device.index());
   handler_->SetCUDAStream(torch_current_stream);
 
@@ -56,8 +115,16 @@ void BatchPrefillWithPagedKVCachePyTorchWrapper::Plan(
         head_dim, page_size);
     TORCH_CHECK(status == cudaSuccess, "BatchPrefillWithPagedKVCache failed with error ",
                 cudaGetErrorString(status));
+    
+    cudaDeviceSynchronize();
+    write_tensor_to_file("Plan.after.qo_indptr.txt", qo_indptr);
+    write_tensor_to_file("Plan.after.paged_kv_indptr.txt", paged_kv_indptr);
+    write_tensor_to_file("Plan.after.float_workspace_buffer.txt", float_workspace_buffer);
+    write_tensor_to_file("Plan.after.int_workspace_buffer.txt", int_workspace_buffer);
+    
     return true;
   });
+
 }
 
 void BatchPrefillWithPagedKVCachePyTorchWrapper::UpdatePageLockedBufferSize(
@@ -72,6 +139,18 @@ std::vector<torch::Tensor> BatchPrefillWithPagedKVCachePyTorchWrapper::Run(
     torch::Tensor paged_kv_last_page_len, bool causal, unsigned int pos_encoding_mode,
     bool allow_fp16_qk_reduction, int window_left, float logits_soft_cap, float sm_scale,
     float rope_scale, float rope_theta, bool return_lse) {
+
+  printf("@@ >> In c++: BatchPrefillWithPagedKVCachePyTorchWrapper::Run, line 108\n"); 
+  printf("@@ >> causal: %s\n", causal ? "true" : "false");
+  printf("@@ >> pos_encoding_mode: %u\n", pos_encoding_mode);
+  printf("@@ >> allow_fp16_qk_reduction: %s\n", allow_fp16_qk_reduction ? "true" : "false");
+  printf("@@ >> window_left: %d\n", window_left);
+  printf("@@ >> logits_soft_cap: %f\n", logits_soft_cap);
+  printf("@@ >> sm_scale: %f\n", sm_scale);
+  printf("@@ >> rope_scale: %f\n", rope_scale);
+  printf("@@ >> rope_theta: %f\n", rope_theta);
+  printf("@@ >> return_lse: %s\n", return_lse ? "true" : "false");
+
   bool paged_kv_defined = paged_kv_cache.has_value();
   CHECK_INPUT(q);
   CHECK_INPUT(qo_indptr);
@@ -163,7 +242,24 @@ std::vector<torch::Tensor> BatchPrefillWithPagedKVCachePyTorchWrapper::Run(
   auto kv_scalar_type =
       paged_kv_defined ? paged_kv_cache->scalar_type() : paged_k_cache->scalar_type();
 
+  write_tensor_to_file("Run.before.q.txt", q);
+  write_tensor_to_file("Run.before.qo_indptr.txt", qo_indptr);
+  
+  if (paged_kv_cache.has_value()) {
+    write_tensor_to_file("Run.before.paged_kv_cache.txt", paged_kv_cache.value());
+  }
+  if (paged_k_cache.has_value()) {
+    write_tensor_to_file("Run.before.paged_k_cache.txt", paged_k_cache.value());
+  }
+  if (paged_v_cache.has_value()) {
+    write_tensor_to_file("Run.before.paged_v_cache.txt", paged_v_cache.value());
+  }
+  write_tensor_to_file("Run.before.paged_kv_indptr.txt", paged_kv_indptr);
+  write_tensor_to_file("Run.before.paged_kv_indices.txt", paged_kv_indices);
+  write_tensor_to_file("Run.before.paged_kv_last_page_len.txt", paged_kv_last_page_len);
+  
   if (q_scalar_type == kv_scalar_type) {
+    printf("@@ >> In c++: q_scalar_type == kv_scalar_type, invoking logic in line 211\n");
     DISPATCH_PYTORCH_DTYPE_TO_CTYPE_FP16(q_scalar_type, c_type, [&] {
       return DISPATCH_logits_post_hook(logits_post_hook, LOGITS_POST_HOOK, [&] {
         paged_kv_t<PageStorage::kIndices, c_type, int32_t> paged_kv(
@@ -203,6 +299,7 @@ std::vector<torch::Tensor> BatchPrefillWithPagedKVCachePyTorchWrapper::Run(
       });
     });
   } else {
+    printf("@@ >> In c++: q_scalar_type != kv_scalar_type, invoking logic in line 251\n");
     DISPATCH_PYTORCH_DTYPE_TO_CTYPE_FP16(q_scalar_type, q_type, [&] {
       return DISPATCH_PYTORCH_DTYPE_TO_CTYPE_FP8(kv_scalar_type, kv_type, [&] {
         return DISPATCH_logits_post_hook(logits_post_hook, LOGITS_POST_HOOK, [&] {
@@ -247,6 +344,12 @@ std::vector<torch::Tensor> BatchPrefillWithPagedKVCachePyTorchWrapper::Run(
       });
     });
   }
+
+  printf("@@ >> In c++: BatchPrefillWithPagedKVCachePyTorchWrapper::Run, line 306\n");
+  // cudaDeviceSynchronize();
+
+  write_tensor_to_file("Run.after.o.txt", o);
+  write_tensor_to_file("Run.after.lse.txt", lse);
 
   if (return_lse) {
     return {o, lse};

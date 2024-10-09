@@ -20,6 +20,29 @@
 
 using namespace flashinfer;
 
+
+
+void write_tensor_to_file(const std::string& file_path, const torch::Tensor& tensor) {
+    FILE* file = fopen(file_path.c_str(), "w");
+    if (file == NULL) {
+        throw std::runtime_error("Unable to open file: " + file_path);
+    }
+
+    // Convert tensor to CPU if it's not already
+    torch::Tensor cpu_tensor = tensor.device().is_cpu() ? tensor : tensor.to(torch::kCPU);
+
+    cpu_tensor = cpu_tensor.to(torch::kFloat32);
+
+    // Write each element to the file
+    for (int64_t i = 0; i < cpu_tensor.numel(); ++i) {
+        fprintf(file, "%f\n", cpu_tensor.data_ptr<float>()[i]);
+    }
+    // echo
+    printf("@@ >> Wrote %ld elements to %s\n", cpu_tensor.numel(), file_path.c_str());
+
+    fclose(file);
+}
+
 void append_paged_kv_cache(torch::Tensor append_key, torch::Tensor append_value,
                            torch::Tensor append_indptr, std::optional<torch::Tensor> paged_kv_cache,
                            std::optional<torch::Tensor> paged_k_cache,
@@ -105,6 +128,16 @@ void append_paged_kv_cache(torch::Tensor append_key, torch::Tensor append_value,
   auto kv_scalar_dtype =
       paged_kv_cache.has_value() ? paged_kv_cache->scalar_type() : paged_k_cache->scalar_type();
 
+  write_tensor_to_file("append_paged_kv_cache.before.append_key.txt", append_key);
+  write_tensor_to_file("append_paged_kv_cache.before.append_value.txt", append_value);
+  write_tensor_to_file("append_paged_kv_cache.before.append_indptr.txt", append_indptr);
+  if (paged_kv_defined) {
+    write_tensor_to_file("append_paged_kv_cache.before.paged_kv_cache.txt", paged_kv_cache.value());
+  } else {
+    write_tensor_to_file("append_paged_kv_cache.before.paged_k_cache.txt", paged_k_cache.value());
+    write_tensor_to_file("append_paged_kv_cache.before.paged_v_cache.txt", paged_v_cache.value());
+  }
+
   bool success = DISPATCH_PYTORCH_DTYPE_TO_CTYPE(kv_scalar_dtype, c_type, [&] {
     paged_kv_t<page_storage, c_type, int32_t> paged_kv(
         num_heads, page_size, head_dim, batch_size, kv_layout,
@@ -119,6 +152,16 @@ void append_paged_kv_cache(torch::Tensor append_key, torch::Tensor append_value,
                            static_cast<int32_t*>(append_indptr.data_ptr()), torch_current_stream);
     TORCH_CHECK(status == cudaSuccess,
                 "AppendPagedKVCache failed with error: ", cudaGetErrorString(status));
+    
+    cudaDeviceSynchronize();
+    if (paged_kv_defined) {
+        write_tensor_to_file("append_paged_kv_cache.after.paged_kv_cache.txt", paged_kv_cache.value());
+    } else {
+        write_tensor_to_file("append_paged_kv_cache.after.paged_k_cache.txt", paged_k_cache.value());
+        write_tensor_to_file("append_paged_kv_cache.after.paged_v_cache.txt", paged_v_cache.value());
+    }
+
+
     return true;
   });
 
